@@ -32,13 +32,13 @@ import           System.IO.Error                (isPermissionError)
 import           Hakyll.Core.Configuration
 import           Hakyll.Core.Identifier
 import           Hakyll.Core.Identifier.Pattern
-
+import           Hakyll.Preview.Semaphore
 
 --------------------------------------------------------------------------------
 -- | A thread that watches for updates in a 'providerDirectory' and recompiles
 -- a site as soon as any changes occur
-watchUpdates :: Configuration -> IO Pattern -> IO ()
-watchUpdates conf update = do
+watchUpdates :: Configuration -> IO Pattern -> Sema -> IO ()
+watchUpdates conf update refresh = do
     let providerDir = providerDirectory conf
     shouldBuild     <- newEmptyMVar
     pattern         <- update
@@ -65,6 +65,8 @@ watchUpdates conf update = do
                 Nothing    -> putStrLn (show e)
                 Just async -> throw (async :: AsyncException))
             (update' event providerDir)
+        did <- tryPutSema refresh True
+        putStrLn ("updt: " <> show did)
 
     -- Send an event whenever something occurs so that the thread described
     -- above will do a build.

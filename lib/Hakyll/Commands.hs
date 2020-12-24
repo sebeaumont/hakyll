@@ -34,6 +34,7 @@ import           Hakyll.Core.Util.File
 --------------------------------------------------------------------------------
 #ifdef WATCH_SERVER
 import           Hakyll.Preview.Poll        (watchUpdates)
+import           Hakyll.Preview.Semaphore 
 #endif
 
 #ifdef PREVIEW_SERVER
@@ -86,15 +87,19 @@ preview conf logger rules port  = do
 preview _ _ _ _ = previewServerDisabled
 #endif
 
-
 --------------------------------------------------------------------------------
 -- | Watch and recompile for changes
 
 watch :: Configuration -> Logger -> String -> Int -> Bool -> Rules a -> IO ()
+watch c l h p rs r = do
+  flag <- newSema
+  watch' c l h p rs r flag
+
+watch' :: Configuration -> Logger -> String -> Int -> Bool -> Rules a -> Sema -> IO ()
 #ifdef WATCH_SERVER
-watch conf logger host port runServer rules = do
+watch' conf logger host port runServer rules flag = do
 #ifndef mingw32_HOST_OS
-    _ <- forkIO $ watchUpdates conf update
+    _ <- forkIO $ watchUpdates conf update flag
 #else
     -- Force windows users to compile with -threaded flag, as otherwise
     -- thread is blocked indefinitely.
@@ -107,10 +112,11 @@ watch conf logger host port runServer rules = do
     update = do
         (_, ruleSet) <- run conf logger rules
         return $ rulesPattern ruleSet
+        
     loop = threadDelay 100000 >> loop
-    server' = if runServer then server conf logger host port else loop
+    server' = if runServer then server conf logger host port (Just flag) else loop
 #else
-watch _ _ _ _ _ _ = watchServerDisabled
+watch' _ _ _ _ _ _ = watchServerDisabled
 #endif
 
 --------------------------------------------------------------------------------
@@ -121,11 +127,11 @@ rebuild conf logger rules =
 
 --------------------------------------------------------------------------------
 -- | Start a server
-server :: Configuration -> Logger -> String -> Int -> IO ()
+server :: Configuration -> Logger -> String -> Int -> Maybe Sema -> IO ()
 #ifdef PREVIEW_SERVER
-server conf logger host port = do
+server conf logger host port sem = do
     let destination = destinationDirectory conf
-    staticServer logger destination host port
+    staticServer logger destination host port sem
 #else
 server _ _ _ _ = previewServerDisabled
 #endif
